@@ -42,28 +42,58 @@ router.get("/signout", (req, res) => {
 });
 
 router.get("/signin", (req, res) => {
-  res.send(signinTemplate());
+  res.send(signinTemplate({}));
 });
 
-router.post("/signin", async (req, res) => {
-  const { email, password } = req.body;
-  const user = await usersRepo.getOneBy({
-    email,
-  });
+router.post(
+  "/signin",
+  [
+    check("email")
+      .trim()
+      .normalizeEmail()
+      .isEmail()
+      .withMessage("Must be a valid email")
+      .custom(async (email) => {
+        const user = await usersRepo.getOneBy({ email });
+        console.log(user);
+        console.log(!user);
+        if (!user) {
+          throw new Error("You must sign up first");
+        }
+      }),
+    check("password")
+      .trim()
+      .custom(async (password, { req }) => {
+        const user = await usersRepo.getOneBy({ email: req.body.email });
 
-  if (!user) return res.send("YOU HAVE TO SIGN UP FIRST");
+        if (!user) {
+          throw new Error("Invalid password");
+        }
 
-  const comparison = await usersRepo.compararContraseñas(
-    user.password,
-    password
-  );
-  if (!comparison) {
-    return res.send("password incorrect");
+        const comparacion = await usersRepo.compararContraseñas(
+          user.password,
+          password
+        );
+
+        if (!comparacion) {
+          throw new Error("Invalid password");
+        }
+      }),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+
+    const { email, password } = req.body;
+    if (!errors.isEmpty()) {
+      return res.send(signinTemplate({ errors }));
+    }
+    const user = await usersRepo.getOneBy({
+      email,
+    });
+
+    req.session.userId = user.id;
+    return res.send(`welcome back ${req.session.userId}`);
   }
-
-  req.session.userId = user.id;
-
-  return res.send(`welcome back ${req.session.userId}`);
-});
+);
 
 module.exports = router;
